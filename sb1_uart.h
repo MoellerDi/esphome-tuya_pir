@@ -374,9 +374,6 @@ class SB1UARTComponent : public Component, public uart::UARTDevice {
               }
               else if (event_type == SB1_EVENT_TYPE_BATT_LOW) {
                 ESP_LOGI(TAG, "BattLow event: %d", this->message_.value[i + 4]);
-                if (this->sensor_ != nullptr) {
-                  this->sensor_->publish_state(this->message_.value[i + 4] > 0);
-                }
                 write_message(SB1_MESSAGE_TYPE_EVENT, SB1_EVENT_ACK, 1); //ACK event but no change to state
               }
             }

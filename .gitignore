@@ -92,3 +92,4 @@ ENV/
 .build/
 .esphome/
 .substitutions.yaml
+secrets.yaml

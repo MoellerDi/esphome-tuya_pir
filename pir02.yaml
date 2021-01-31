@@ -1,0 +1,69 @@
+
+substitutions:
+  device_name: pir02
+
+esphome:
+  name: ${device_name}
+  platform: ESP8266
+  board: esp01_1m
+  arduino_version: 2.5.1
+  board_flash_mode: dout
+  includes:
+    - /config/esphome/sb1_uart.h
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  domain: .lan
+  fast_connect: true
+  # Remove or comment out use_address
+  # use_address: pir.lan
+
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_user
+  password: !secret mqtt_pass
+  discovery: false
+  birth_message:
+  shutdown_message:
+  will_message:
+
+uart:
+  - tx_pin: 1
+    rx_pin: 3
+    baud_rate: 9600
+    id: uart0
+
+ota:
+
+logger:
+  level: INFO
+  #level: VERY_VERBOSE
+  hardware_uart: UART1
+
+sensor:
+  - platform: wifi_signal
+    name: "PIR WiFi Signal"
+    update_interval: 10s
+    expire_after:
+    filters: []
+  - platform: adc
+    name: "PIR Battery"
+    update_interval: 10s
+    expire_after:
+    pin: VCC
+    filters: []
+
+binary_sensor:
+  - platform: template
+    id: motion
+    name: "PIR Motion"
+    filters: []
+    device_class: motion
+    lambda: "return {};"
+
+custom_component:
+  - id: sb1_uart
+    lambda: |-
+      auto component = new SB1UARTComponent(id(uart0), id(motion));
+      return {component};

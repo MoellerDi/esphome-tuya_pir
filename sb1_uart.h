@@ -12,7 +12,7 @@ using namespace esphome;
 #define EVENT_ACK_DELAY  250   // Time to wait before acking motion event and getting put to sleep
 #define ACK_WAIT_TIMEOUT 1000  // Time to wait for handshake response before re-sending request
 #define HALT_SLEEP_DELAY 1000 * 1000 * 120 // Time to deepsleep when waiting to get put to sleep by the SB1
-#define NORM_MAX_UPTIME  1000  // Time to ttay in RUNNING_NORMAL waiting for an event before sleeping
+#define NORM_MAX_UPTIME  1000 // Time to stay in RUNNING_NORMAL waiting for an event before sleeping
 #define OTA_MAX_UPTIME   30000 // Time to stay in RUNNING_OTA waiting for OTA before rebooting
                                // This is a safety measure; although the SB1 will let us stay up for about 120
                                // seconds, starting an OTA too late will likely result in the ESP getting put
@@ -40,10 +40,10 @@ enum SB1MessageType {
 };
 
 enum SB1EventType {
-  SB1_EVENT_TYPE_DOOR   = 0x0104,
-  SB1_EVENT_TYPE_MOTION = 0x6501,
-  SB1_EVENT_TYPE_DOOR_RESET   = 0x6504,
-  SB1_EVENT_TYPE_MOTION_RESET = 0x6604
+  SB1_EVENT_TYPE_DOOR       = 0x0104,
+  SB1_EVENT_TYPE_MOTION     = 0x6501,
+  SB1_EVENT_TYPE_DOOR_RESET = 0x6504,
+  SB1_EVENT_TYPE_BATT_LOW   = 0x6604
 };
 
 enum SB1State {
@@ -256,6 +256,7 @@ class SB1UARTComponent : public Component, public uart::UARTDevice {
       // Reset events are user-initiated and can occur regardless of state
       if (have_message && message_matches(SB1_MESSAGE_TYPE_RESET, 0)) {
           this->ota_mode_ = true;
+          ESP_LOGV(TAG, "Reset event detected, set_state(SB1_STATE_RESET_ACK)");
           set_state(SB1_STATE_RESET_ACK);
           return;
       }
@@ -334,13 +335,14 @@ class SB1UARTComponent : public Component, public uart::UARTDevice {
           break;
         case SB1_STATE_RESET_ACK:
           if (state_duration() > RESET_ACK_DELAY) {
-            ESP_LOGI(TAG, "Rebooting: SB1_STATE_RESET_ACK");
+            ESP_LOGI(TAG, "Rebooting (timeout: %d): SB1_STATE_RESET_ACK", RESET_ACK_DELAY);
             App.safe_reboot();
           }
           break;
         case SB1_STATE_EVENT_ACK:
           if (state_duration() > EVENT_ACK_DELAY) {
-            ESP_LOGI(TAG, "Rebooting: SB1_STATE_EVENT_ACK");
+            ESP_LOGI(TAG, "Rebooting (timeout: %d): SB1_STATE_EVENT_ACK", EVENT_ACK_DELAY);
+            if (this->sensor_ != nullptr) { this->sensor_->publish_state(0); }
             App.safe_reboot();
           }
           break;
@@ -359,20 +361,27 @@ class SB1UARTComponent : public Component, public uart::UARTDevice {
                 if (this->sensor_ != nullptr) {
                   this->sensor_->publish_state(this->message_.value[i + 4] > 0);
                 }
+                set_state(SB1_STATE_EVENT_ACK);
               }
               else if (event_type == SB1_EVENT_TYPE_DOOR) {
                 ESP_LOGI(TAG, "Door event: %d", this->message_.value[i + 4]);
                 if (this->sensor_ != nullptr) {
                   this->sensor_->publish_state(this->message_.value[i + 4] == 0);
                 }
-              } else if (event_type == SB1_EVENT_TYPE_MOTION_RESET ||
-                         event_type == SB1_EVENT_TYPE_DOOR_RESET) {
+              }
+              else if (event_type == SB1_EVENT_TYPE_DOOR_RESET) {
                 ESP_LOGI(TAG, "Reset event: %d", this->message_.value[i + 4]);
               }
+              else if (event_type == SB1_EVENT_TYPE_BATT_LOW) {
+                ESP_LOGI(TAG, "BattLow event: %d", this->message_.value[i + 4]);
+                if (this->sensor_ != nullptr) {
+                  this->sensor_->publish_state(this->message_.value[i + 4] > 0);
+                }
+                write_message(SB1_MESSAGE_TYPE_EVENT, SB1_EVENT_ACK, 1); //ACK event but no change to state
+              }
             }
-            set_state(SB1_STATE_EVENT_ACK);
           } else if (state_duration() > NORM_MAX_UPTIME) {
-            ESP_LOGI(TAG, "Rebooting: SB1_STATE_RUNNING_NORMAL");
+            ESP_LOGI(TAG, "Rebooting (timeout: %d): SB1_STATE_RUNNING_NORMAL", NORM_MAX_UPTIME);
             App.safe_reboot();
           }
           break;
@@ -380,7 +389,7 @@ class SB1UARTComponent : public Component, public uart::UARTDevice {
           this->ota_mode_ = false;
           // Don't expect any events, just reboot if we've been up too long.
           if (state_duration() > OTA_MAX_UPTIME) {
-            ESP_LOGI(TAG, "Rebooting: SB1_STATE_RUNNING_OTA");
+            ESP_LOGI(TAG, "Rebooting (timeout: %d): SB1_STATE_RUNNING_OTA", OTA_MAX_UPTIME);
             App.safe_reboot();
           }
           break;
@@ -405,6 +414,7 @@ class SB1UARTComponent : public Component, public uart::UARTDevice {
           write_message(SB1_MESSAGE_TYPE_EVENT, SB1_EVENT_ACK, 1);
           break;
         case SB1_STATE_RUNNING_NORMAL:
+          ESP_LOGD(TAG, "ESP.deepSleep(%d, WAKE_RF_DISABLED);", HALT_SLEEP_DELAY);
           ESP.deepSleep(HALT_SLEEP_DELAY, WAKE_RF_DISABLED);
           break;
         default:

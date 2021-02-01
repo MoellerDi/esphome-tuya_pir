@@ -342,7 +342,6 @@ class SB1UARTComponent : public Component, public uart::UARTDevice {
         case SB1_STATE_EVENT_ACK:
           if (state_duration() > EVENT_ACK_DELAY) {
             ESP_LOGI(TAG, "Rebooting (timeout: %d): SB1_STATE_EVENT_ACK", EVENT_ACK_DELAY);
-            if (this->sensor_ != nullptr) { this->sensor_->publish_state(0); }
             App.safe_reboot();
           }
           break;
@@ -409,6 +408,7 @@ class SB1UARTComponent : public Component, public uart::UARTDevice {
           break;
         case SB1_STATE_EVENT_ACK:
           write_message(SB1_MESSAGE_TYPE_EVENT, SB1_EVENT_ACK, 1);
+          //if (this->sensor_ != nullptr) { this->sensor_->publish_state(0); }
           break;
         case SB1_STATE_RUNNING_NORMAL:
           ESP_LOGD(TAG, "ESP.deepSleep(%d, WAKE_RF_DISABLED);", HALT_SLEEP_DELAY);
